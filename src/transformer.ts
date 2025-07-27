@@ -33,28 +33,26 @@ function VisitExpression(context: TransformContext, node: ts.Expression): ts.Exp
 		ts.sys.write(`[EnumArrayTransformer] Matched call: $enumarray<...>\n`);
 
 		const TypeArg = node.typeArguments[0];
-		if (!ts.isTypeReferenceNode(TypeArg)) {
+
+		let EnumIdent: ts.Identifier | undefined;
+
+		if (ts.isTypeReferenceNode(TypeArg) && ts.isIdentifier(TypeArg.typeName)) {
+			EnumIdent = TypeArg.typeName;
+		} else if (ts.isTypeQueryNode(TypeArg) && ts.isIdentifier(TypeArg.exprName)) {
+			EnumIdent = TypeArg.exprName;
+		} else {
 			ts.sys.write(
-				`[EnumArrayTransformer] Skipped: type argument is not a TypeReferenceNode (was ${
+				`[EnumArrayTransformer] Skipped: unsupported type argument node kind (${
 					ts.SyntaxKind[TypeArg.kind]
 				})\n`,
 			);
 			return node;
 		}
 
-		const TypeName = TypeArg.typeName;
-		if (!ts.isIdentifier(TypeName)) {
-			ts.sys.write(
-				`[EnumArrayTransformer] Skipped: type argument name is not an Identifier (was ${
-					ts.SyntaxKind[TypeName.kind]
-				})\n`,
-			);
-			return node;
-		}
+		const TypeNameText = EnumIdent.getText();
 
 		const Checker = program.getTypeChecker();
-		const EnumSymbol = Checker.getSymbolAtLocation(TypeName);
-		const TypeNameText = TypeName.getText();
+		const EnumSymbol = Checker.getSymbolAtLocation(EnumIdent);
 
 		if (!EnumSymbol) {
 			ts.sys.write(`[EnumArrayTransformer] Skipped: could not resolve symbol for '${TypeNameText}'\n`);
@@ -87,7 +85,7 @@ function VisitExpression(context: TransformContext, node: ts.Expression): ts.Exp
 			}
 
 			ts.sys.write(`[EnumArrayTransformer] Adding member: ${TypeNameText}.${MemberName}\n`);
-			const EnumAccess = factory.createPropertyAccessExpression(TypeName, Member.name);
+			const EnumAccess = factory.createPropertyAccessExpression(EnumIdent, Member.name);
 			Elements.push(EnumAccess);
 		}
 
