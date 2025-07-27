@@ -21,13 +21,7 @@ export class TransformContext {
 }
 
 function VisitExpression(context: TransformContext, node: ts.Expression): ts.Expression {
-	ts.sys.write("[EnumArrayTransformer] Running\n");
-
 	const { factory, program } = context;
-
-	if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
-		ts.sys.write(`[EnumArrayTransformer] Found call: ${node.expression.text}\n`);
-	}
 
 	// Match $enumarray<MyEnum>()
 	if (
@@ -36,24 +30,47 @@ function VisitExpression(context: TransformContext, node: ts.Expression): ts.Exp
 		node.expression.text === "$enumarray" &&
 		node.typeArguments?.length === 1
 	) {
-		ts.sys.write("[EnumArrayTransformer] Found $enumarray call\n");
+		ts.sys.write("[EnumArrayTransformer] Matched $enumarray call\n");
+
 		const TypeArg = node.typeArguments[0];
-		if (!ts.isTypeReferenceNode(TypeArg)) return node;
+		if (!ts.isTypeReferenceNode(TypeArg)) {
+			ts.sys.write("[EnumArrayTransformer] TypeArg is not a TypeReferenceNode\n");
+			return node;
+		}
 
 		const TypeName = TypeArg.typeName;
-		if (!ts.isIdentifier(TypeName)) return node;
+		if (!ts.isIdentifier(TypeName)) {
+			ts.sys.write("[EnumArrayTransformer] TypeName is not an Identifier\n");
+			return node;
+		}
 
 		const Checker = program.getTypeChecker();
 		const EnumSymbol = Checker.getSymbolAtLocation(TypeName);
-		if (!EnumSymbol || !EnumSymbol.declarations) return node;
+		if (!EnumSymbol) {
+			ts.sys.write(`[EnumArrayTransformer] Could not resolve symbol for type '${TypeName.getText()}'\n`);
+			return node;
+		}
+
+		if (!EnumSymbol.declarations || EnumSymbol.declarations.length === 0) {
+			ts.sys.write(`[EnumArrayTransformer] Symbol for '${TypeName.getText()}' has no declarations\n`);
+			return node;
+		}
 
 		const Declaration = EnumSymbol.declarations.find(ts.isEnumDeclaration);
-		if (!Declaration) return node;
+		if (!Declaration) {
+			ts.sys.write(`[EnumArrayTransformer] Declaration for '${TypeName.getText()}' is not an EnumDeclaration\n`);
+			return node;
+		}
+
+		ts.sys.write(`[EnumArrayTransformer] Replacing $enumarray<${TypeName.getText()}> with literal array\n`);
 
 		const Elements: ts.Expression[] = [];
 
 		for (const Member of Declaration.members) {
-			if (!ts.isIdentifier(Member.name)) continue;
+			if (!ts.isIdentifier(Member.name)) {
+				ts.sys.write(`[EnumArrayTransformer] Skipping non-Identifier member name: ${Member.name.getText()}\n`);
+				continue;
+			}
 
 			const EnumAccess = factory.createPropertyAccessExpression(TypeName, Member.name);
 			Elements.push(EnumAccess);
