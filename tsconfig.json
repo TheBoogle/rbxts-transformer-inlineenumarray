@@ -6,7 +6,6 @@
 		"rootDir": "src",
 		"typeRoots": [
 			"node_modules/@types",
-			"../index"
 		],
 		"experimentalDecorators": true,
 		"emitDecoratorMetadata": true,
@@ -21,4 +20,8 @@
 		"skipLibCheck": true,
 		"forceConsistentCasingInFileNames": true,
 	},
+	"include": [
+		"src",
+		"index.d.ts"
+	]
 }
