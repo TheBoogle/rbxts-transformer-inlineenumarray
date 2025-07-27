@@ -9,6 +9,7 @@
 		"typescript": "^5.2.2"
 	},
 	"scripts": {
+		"prepare": "npm run build",
 		"build": "tsc && cp ./index.d.ts ./out/index.d.ts",
 		"watch": "tsc -w"
 	},
