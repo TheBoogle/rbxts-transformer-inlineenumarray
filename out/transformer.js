@@ -66,6 +66,7 @@ function VisitExpression(context, node) {
         typescript_1.default.isIdentifier(node.expression) &&
         node.expression.text === "$enumarray" &&
         ((_b = node.typeArguments) === null || _b === void 0 ? void 0 : _b.length) === 1) {
+        typescript_1.default.sys.write("[EnumArrayTransformer] Found $enumarray call\n");
         var TypeArg = node.typeArguments[0];
         if (!typescript_1.default.isTypeReferenceNode(TypeArg))
             return node;

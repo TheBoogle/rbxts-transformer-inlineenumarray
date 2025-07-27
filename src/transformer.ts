@@ -32,6 +32,7 @@ function VisitExpression(context: TransformContext, node: ts.Expression): ts.Exp
 		node.expression.text === "$enumarray" &&
 		node.typeArguments?.length === 1
 	) {
+		ts.sys.write("[EnumArrayTransformer] Found $enumarray call\n");
 		const TypeArg = node.typeArguments[0];
 		if (!ts.isTypeReferenceNode(TypeArg)) return node;
 
