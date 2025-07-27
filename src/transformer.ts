@@ -1,5 +1,4 @@
 import ts from "typescript";
-import crypto from "crypto";
 
 export interface TransformerConfig {
 	_: void;
@@ -7,7 +6,6 @@ export interface TransformerConfig {
 
 export class TransformContext {
 	public factory: ts.NodeFactory;
-	public readonly EnumUUIDMap = new Map<ts.Symbol, Map<string, string>>();
 
 	constructor(
 		public program: ts.Program,
@@ -15,121 +13,62 @@ export class TransformContext {
 		public config: TransformerConfig,
 	) {
 		this.factory = context.factory;
-		this.collectUuidEnums();
 	}
 
 	transform<T extends ts.Node>(node: T): T {
-		return ts.visitEachChild(node, (child) => visitNode(this, child), this.context);
-	}
-
-	private collectUuidEnums() {
-		const checker = this.program.getTypeChecker();
-
-		for (const sourceFile of this.program.getSourceFiles()) {
-			if (!sourceFile.fileName.endsWith(".d.ts")) continue;
-
-			ts.forEachChild(sourceFile, (node) => {
-				if (!ts.isEnumDeclaration(node)) return;
-
-				const hasUuid = ts.getJSDocTags(node).some((tag) => tag.tagName.text === "uuid");
-				if (!hasUuid) return;
-
-				const symbol = checker.getSymbolAtLocation(node.name);
-				if (!symbol) return;
-
-				// ts.sys.write(`[UUID] Found enum: ${node.name.getText()} in ${sourceFile.fileName}\n`);
-
-				const memberMap = new Map<string, string>();
-				for (const member of node.members) {
-					const name = member.name.getText();
-					const uuid = crypto.randomUUID();
-					memberMap.set(name, uuid);
-					// ts.sys.write(` - ${name} → ${uuid}\n`);
-				}
-
-				this.EnumUUIDMap.set(symbol, memberMap);
-			});
-		}
+		return ts.visitEachChild(node, (child) => VisitNode(this, child), this.context);
 	}
 }
 
-function visitExpression(context: TransformContext, node: ts.Expression): ts.Expression {
-	const { factory, program, EnumUUIDMap } = context;
+function VisitExpression(context: TransformContext, node: ts.Expression): ts.Expression {
+	ts.sys.write("[EnumArrayTransformer] Running\n");
 
-	if (ts.isPropertyAccessExpression(node)) {
-		const checker = program.getTypeChecker();
+	const { factory, program } = context;
 
-		const enumSymbol = checker.getSymbolAtLocation(node.expression);
-		if (!enumSymbol) return context.transform(node);
+	// Match $enumarray<MyEnum>()
+	if (
+		ts.isCallExpression(node) &&
+		ts.isIdentifier(node.expression) &&
+		node.expression.text === "$enumarray" &&
+		node.typeArguments?.length === 1
+	) {
+		const TypeArg = node.typeArguments[0];
+		if (!ts.isTypeReferenceNode(TypeArg)) return node;
 
-		const uuidMap = EnumUUIDMap.get(enumSymbol);
-		if (!uuidMap) return context.transform(node);
+		const TypeName = TypeArg.typeName;
+		if (!ts.isIdentifier(TypeName)) return node;
 
-		const memberName = node.name.getText();
-		const uuid = uuidMap.get(memberName);
-		if (!uuid) return context.transform(node);
+		const Checker = program.getTypeChecker();
+		const EnumSymbol = Checker.getSymbolAtLocation(TypeName);
+		if (!EnumSymbol || !EnumSymbol.declarations) return node;
 
-		const enumFullName = node.getText();
-		const enumType = factory.createTypeReferenceNode(enumFullName, undefined);
+		const Declaration = EnumSymbol.declarations.find(ts.isEnumDeclaration);
+		if (!Declaration) return node;
 
-		const castToUnknown = factory.createAsExpression(
-			factory.createStringLiteral(uuid),
-			factory.createKeywordTypeNode(ts.SyntaxKind.UnknownKeyword),
-		);
-		return factory.createAsExpression(castToUnknown, enumType);
+		const Elements: ts.Expression[] = [];
+
+		for (const Member of Declaration.members) {
+			if (!ts.isIdentifier(Member.name)) continue;
+
+			const EnumAccess = factory.createPropertyAccessExpression(TypeName, Member.name);
+			Elements.push(EnumAccess);
+		}
+
+		return factory.createArrayLiteralExpression(Elements, false);
 	}
 
 	return context.transform(node);
 }
 
-function visitNode(context: TransformContext, node: ts.Node): ts.Node {
+function VisitNode(context: TransformContext, node: ts.Node): ts.Node {
 	if (ts.isExpression(node)) {
-		return visitExpression(context, node);
+		return VisitExpression(context, node);
 	}
 
-	if (!ts.isEnumDeclaration(node)) return context.transform(node);
-
-	// Only patch .d.ts files
-	const sourceFile = node.getSourceFile();
-	if (!sourceFile.fileName.endsWith(".d.ts")) {
-		return node;
-	}
-
-	const checker = context.program.getTypeChecker();
-	const symbol = checker.getSymbolAtLocation(node.name);
-	if (!symbol) {
-		// ts.sys.write(`[UUID] No symbol for enum: ${node.name.getText()}\n`);
-		return node;
-	}
-
-	const uuidMap = context.EnumUUIDMap.get(symbol);
-	if (!uuidMap) {
-		// ts.sys.write(`[UUID] Enum not in map (probably missing @uuid): ${node.name.getText()}\n`);
-		return node;
-	}
-
-	const { factory } = context;
-
-	const newMembers = node.members.map((member) => {
-		const name = member.name;
-		const key = name.getText();
-		const uuid = uuidMap.get(key)!;
-
-		// Only replace if no initializer exists
-		if (member.initializer) return member;
-
-		const uuidLiteral = factory.createStringLiteral(uuid);
-		return factory.updateEnumMember(member, name, uuidLiteral);
-	});
-
-	const modifiers = ts.canHaveModifiers(node) ? ts.getModifiers(node) : undefined;
-
-	// ts.sys.write(`[UUID] Rewriting enum: ${node.name.getText()}\n`);
-
-	return factory.updateEnumDeclaration(node, modifiers, node.name, newMembers);
+	return context.transform(node);
 }
 
-export default function transformer(
+export default function Transformer(
 	program: ts.Program,
 	config: TransformerConfig,
 ): ts.TransformerFactory<ts.SourceFile> {

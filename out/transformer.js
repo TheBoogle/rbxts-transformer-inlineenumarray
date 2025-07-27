@@ -40,133 +40,73 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TransformContext = void 0;
-exports.default = transformer;
+exports.default = Transformer;
 var typescript_1 = __importDefault(require("typescript"));
-var crypto_1 = __importDefault(require("crypto"));
 var TransformContext = /** @class */ (function () {
     function TransformContext(program, context, config) {
         this.program = program;
         this.context = context;
         this.config = config;
-        this.EnumUUIDMap = new Map();
         this.factory = context.factory;
-        this.collectUuidEnums();
     }
     TransformContext.prototype.transform = function (node) {
         var _this = this;
-        return typescript_1.default.visitEachChild(node, function (child) { return visitNode(_this, child); }, this.context);
+        return typescript_1.default.visitEachChild(node, function (child) { return VisitNode(_this, child); }, this.context);
     };
-    TransformContext.prototype.collectUuidEnums = function () {
-        var e_1, _a;
-        var _this = this;
-        var checker = this.program.getTypeChecker();
+    return TransformContext;
+}());
+exports.TransformContext = TransformContext;
+function VisitExpression(context, node) {
+    var e_1, _a;
+    var _b;
+    typescript_1.default.sys.write("[EnumArrayTransformer] Running\n");
+    var factory = context.factory, program = context.program;
+    // Match $enumarray<MyEnum>()
+    if (typescript_1.default.isCallExpression(node) &&
+        typescript_1.default.isIdentifier(node.expression) &&
+        node.expression.text === "$enumarray" &&
+        ((_b = node.typeArguments) === null || _b === void 0 ? void 0 : _b.length) === 1) {
+        var TypeArg = node.typeArguments[0];
+        if (!typescript_1.default.isTypeReferenceNode(TypeArg))
+            return node;
+        var TypeName = TypeArg.typeName;
+        if (!typescript_1.default.isIdentifier(TypeName))
+            return node;
+        var Checker = program.getTypeChecker();
+        var EnumSymbol = Checker.getSymbolAtLocation(TypeName);
+        if (!EnumSymbol || !EnumSymbol.declarations)
+            return node;
+        var Declaration = EnumSymbol.declarations.find(typescript_1.default.isEnumDeclaration);
+        if (!Declaration)
+            return node;
+        var Elements = [];
         try {
-            for (var _b = __values(this.program.getSourceFiles()), _c = _b.next(); !_c.done; _c = _b.next()) {
-                var sourceFile = _c.value;
-                if (!sourceFile.fileName.endsWith(".d.ts"))
+            for (var _c = __values(Declaration.members), _d = _c.next(); !_d.done; _d = _c.next()) {
+                var Member = _d.value;
+                if (!typescript_1.default.isIdentifier(Member.name))
                     continue;
-                typescript_1.default.forEachChild(sourceFile, function (node) {
-                    var e_2, _a;
-                    if (!typescript_1.default.isEnumDeclaration(node))
-                        return;
-                    var hasUuid = typescript_1.default.getJSDocTags(node).some(function (tag) { return tag.tagName.text === "uuid"; });
-                    if (!hasUuid)
-                        return;
-                    var symbol = checker.getSymbolAtLocation(node.name);
-                    if (!symbol)
-                        return;
-                    // ts.sys.write(`[UUID] Found enum: ${node.name.getText()} in ${sourceFile.fileName}\n`);
-                    var memberMap = new Map();
-                    try {
-                        for (var _b = (e_2 = void 0, __values(node.members)), _c = _b.next(); !_c.done; _c = _b.next()) {
-                            var member = _c.value;
-                            var name_1 = member.name.getText();
-                            var uuid = crypto_1.default.randomUUID();
-                            memberMap.set(name_1, uuid);
-                            // ts.sys.write(` - ${name} → ${uuid}\n`);
-                        }
-                    }
-                    catch (e_2_1) { e_2 = { error: e_2_1 }; }
-                    finally {
-                        try {
-                            if (_c && !_c.done && (_a = _b.return)) _a.call(_b);
-                        }
-                        finally { if (e_2) throw e_2.error; }
-                    }
-                    _this.EnumUUIDMap.set(symbol, memberMap);
-                });
+                var EnumAccess = factory.createPropertyAccessExpression(TypeName, Member.name);
+                Elements.push(EnumAccess);
             }
         }
         catch (e_1_1) { e_1 = { error: e_1_1 }; }
         finally {
             try {
-                if (_c && !_c.done && (_a = _b.return)) _a.call(_b);
+                if (_d && !_d.done && (_a = _c.return)) _a.call(_c);
             }
             finally { if (e_1) throw e_1.error; }
         }
-    };
-    return TransformContext;
-}());
-exports.TransformContext = TransformContext;
-function visitExpression(context, node) {
-    var factory = context.factory, program = context.program, EnumUUIDMap = context.EnumUUIDMap;
-    if (typescript_1.default.isPropertyAccessExpression(node)) {
-        var checker = program.getTypeChecker();
-        var enumSymbol = checker.getSymbolAtLocation(node.expression);
-        if (!enumSymbol)
-            return context.transform(node);
-        var uuidMap = EnumUUIDMap.get(enumSymbol);
-        if (!uuidMap)
-            return context.transform(node);
-        var memberName = node.name.getText();
-        var uuid = uuidMap.get(memberName);
-        if (!uuid)
-            return context.transform(node);
-        var enumFullName = node.getText();
-        var enumType = factory.createTypeReferenceNode(enumFullName, undefined);
-        var castToUnknown = factory.createAsExpression(factory.createStringLiteral(uuid), factory.createKeywordTypeNode(typescript_1.default.SyntaxKind.UnknownKeyword));
-        return factory.createAsExpression(castToUnknown, enumType);
+        return factory.createArrayLiteralExpression(Elements, false);
     }
     return context.transform(node);
 }
-function visitNode(context, node) {
+function VisitNode(context, node) {
     if (typescript_1.default.isExpression(node)) {
-        return visitExpression(context, node);
+        return VisitExpression(context, node);
     }
-    if (!typescript_1.default.isEnumDeclaration(node))
-        return context.transform(node);
-    // Only patch .d.ts files
-    var sourceFile = node.getSourceFile();
-    if (!sourceFile.fileName.endsWith(".d.ts")) {
-        return node;
-    }
-    var checker = context.program.getTypeChecker();
-    var symbol = checker.getSymbolAtLocation(node.name);
-    if (!symbol) {
-        // ts.sys.write(`[UUID] No symbol for enum: ${node.name.getText()}\n`);
-        return node;
-    }
-    var uuidMap = context.EnumUUIDMap.get(symbol);
-    if (!uuidMap) {
-        // ts.sys.write(`[UUID] Enum not in map (probably missing @uuid): ${node.name.getText()}\n`);
-        return node;
-    }
-    var factory = context.factory;
-    var newMembers = node.members.map(function (member) {
-        var name = member.name;
-        var key = name.getText();
-        var uuid = uuidMap.get(key);
-        // Only replace if no initializer exists
-        if (member.initializer)
-            return member;
-        var uuidLiteral = factory.createStringLiteral(uuid);
-        return factory.updateEnumMember(member, name, uuidLiteral);
-    });
-    var modifiers = typescript_1.default.canHaveModifiers(node) ? typescript_1.default.getModifiers(node) : undefined;
-    // ts.sys.write(`[UUID] Rewriting enum: ${node.name.getText()}\n`);
-    return factory.updateEnumDeclaration(node, modifiers, node.name, newMembers);
+    return context.transform(node);
 }
-function transformer(program, config) {
+function Transformer(program, config) {
     return function (context) {
         var transformContext = new TransformContext(program, context, config);
         return function (file) {
