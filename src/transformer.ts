@@ -25,6 +25,10 @@ function VisitExpression(context: TransformContext, node: ts.Expression): ts.Exp
 
 	const { factory, program } = context;
 
+	if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
+		ts.sys.write(`[EnumArrayTransformer] Found call: ${node.expression.text}\n`);
+	}
+
 	// Match $enumarray<MyEnum>()
 	if (
 		ts.isCallExpression(node) &&
