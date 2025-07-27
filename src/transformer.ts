@@ -30,48 +30,63 @@ function VisitExpression(context: TransformContext, node: ts.Expression): ts.Exp
 		node.expression.text === "$enumarray" &&
 		node.typeArguments?.length === 1
 	) {
-		ts.sys.write("[EnumArrayTransformer] Matched $enumarray call\n");
+		ts.sys.write(`[EnumArrayTransformer] Matched call: $enumarray<...>\n`);
 
 		const TypeArg = node.typeArguments[0];
 		if (!ts.isTypeReferenceNode(TypeArg)) {
-			ts.sys.write("[EnumArrayTransformer] TypeArg is not a TypeReferenceNode\n");
+			ts.sys.write(
+				`[EnumArrayTransformer] Skipped: type argument is not a TypeReferenceNode (was ${
+					ts.SyntaxKind[TypeArg.kind]
+				})\n`,
+			);
 			return node;
 		}
 
 		const TypeName = TypeArg.typeName;
 		if (!ts.isIdentifier(TypeName)) {
-			ts.sys.write("[EnumArrayTransformer] TypeName is not an Identifier\n");
+			ts.sys.write(
+				`[EnumArrayTransformer] Skipped: type argument name is not an Identifier (was ${
+					ts.SyntaxKind[TypeName.kind]
+				})\n`,
+			);
 			return node;
 		}
 
 		const Checker = program.getTypeChecker();
 		const EnumSymbol = Checker.getSymbolAtLocation(TypeName);
+		const TypeNameText = TypeName.getText();
+
 		if (!EnumSymbol) {
-			ts.sys.write(`[EnumArrayTransformer] Could not resolve symbol for type '${TypeName.getText()}'\n`);
+			ts.sys.write(`[EnumArrayTransformer] Skipped: could not resolve symbol for '${TypeNameText}'\n`);
 			return node;
 		}
 
 		if (!EnumSymbol.declarations || EnumSymbol.declarations.length === 0) {
-			ts.sys.write(`[EnumArrayTransformer] Symbol for '${TypeName.getText()}' has no declarations\n`);
+			ts.sys.write(`[EnumArrayTransformer] Skipped: no declarations found for symbol '${TypeNameText}'\n`);
 			return node;
 		}
 
 		const Declaration = EnumSymbol.declarations.find(ts.isEnumDeclaration);
 		if (!Declaration) {
-			ts.sys.write(`[EnumArrayTransformer] Declaration for '${TypeName.getText()}' is not an EnumDeclaration\n`);
+			const DeclKinds = EnumSymbol.declarations.map((d) => ts.SyntaxKind[d.kind]).join(", ");
+			ts.sys.write(
+				`[EnumArrayTransformer] Skipped: no EnumDeclaration found in symbol '${TypeNameText}' (found: ${DeclKinds})\n`,
+			);
 			return node;
 		}
 
-		ts.sys.write(`[EnumArrayTransformer] Replacing $enumarray<${TypeName.getText()}> with literal array\n`);
+		ts.sys.write(`[EnumArrayTransformer] Replacing $enumarray<${TypeNameText}> with array literal\n`);
 
 		const Elements: ts.Expression[] = [];
 
 		for (const Member of Declaration.members) {
+			const MemberName = Member.name.getText();
 			if (!ts.isIdentifier(Member.name)) {
-				ts.sys.write(`[EnumArrayTransformer] Skipping non-Identifier member name: ${Member.name.getText()}\n`);
+				ts.sys.write(`[EnumArrayTransformer] Skipped member '${MemberName}' (not an Identifier)\n`);
 				continue;
 			}
 
+			ts.sys.write(`[EnumArrayTransformer] Adding member: ${TypeNameText}.${MemberName}\n`);
 			const EnumAccess = factory.createPropertyAccessExpression(TypeName, Member.name);
 			Elements.push(EnumAccess);
 		}
