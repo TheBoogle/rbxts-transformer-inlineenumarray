@@ -30,7 +30,7 @@ function VisitExpression(context: TransformContext, node: ts.Expression): ts.Exp
 		node.expression.text === "$enumarray" &&
 		node.typeArguments?.length === 1
 	) {
-		ts.sys.write(`[EnumArrayTransformer] Matched call: $enumarray<...>\n`);
+		// ts.sys.write(`[EnumArrayTransformer] Matched call: $enumarray<...>\n`);
 
 		const TypeArg = node.typeArguments[0];
 
@@ -73,18 +73,18 @@ function VisitExpression(context: TransformContext, node: ts.Expression): ts.Exp
 			return node;
 		}
 
-		ts.sys.write(`[EnumArrayTransformer] Replacing $enumarray<${TypeNameText}> with array literal\n`);
+		// ts.sys.write(`[EnumArrayTransformer] Replacing $enumarray<${TypeNameText}> with array literal\n`);
 
 		const Elements: ts.Expression[] = [];
 
 		for (const Member of Declaration.members) {
 			const MemberName = Member.name.getText();
 			if (!ts.isIdentifier(Member.name)) {
-				ts.sys.write(`[EnumArrayTransformer] Skipped member '${MemberName}' (not an Identifier)\n`);
+				// ts.sys.write(`[EnumArrayTransformer] Skipped member '${MemberName}' (not an Identifier)\n`);
 				continue;
 			}
 
-			ts.sys.write(`[EnumArrayTransformer] Adding member: ${TypeNameText}.${MemberName}\n`);
+			// ts.sys.write(`[EnumArrayTransformer] Adding member: ${TypeNameText}.${MemberName}\n`);
 			const EnumAccess = factory.createPropertyAccessExpression(EnumIdent, Member.name);
 			Elements.push(EnumAccess);
 		}
